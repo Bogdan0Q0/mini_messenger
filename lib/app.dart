@@ -5,16 +5,24 @@ import 'theme/app_theme.dart';
 import 'screens/login_screen.dart';
 import 'screens/chat_list_screen.dart';
 
+final ValueNotifier<bool> darkModeNotifier = ValueNotifier<bool>(false);
+
 class MiniChatApp extends StatelessWidget {
   const MiniChatApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'MiniChat',
-      debugShowCheckedModeBanner: false,
-      theme: buildAppTheme(),
-      home: const AuthGate(),
+    return ValueListenableBuilder<bool>(
+      valueListenable: darkModeNotifier,
+      builder: (_, isDark, __) {
+        AppColors.applyDark(isDark);
+        return MaterialApp(
+          title: 'MiniChat',
+          debugShowCheckedModeBanner: false,
+          theme: buildAppTheme(),
+          home: const AuthGate(),
+        );
+      },
     );
   }
 }
@@ -27,29 +35,24 @@ class AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<AuthGate> {
-  bool loaded = false;
-  bool loggedIn = false;
+  bool? _loggedIn;
 
   @override
   void initState() {
     super.initState();
-    check();
+    _check();
   }
 
-  Future<void> check() async {
+  Future<void> _check() async {
     final prefs = await SharedPreferences.getInstance();
-    final value = prefs.getBool('logged_in');
-    setState(() {
-      loggedIn = value != null && value;
-      loaded = true;
-    });
+    setState(() => _loggedIn = prefs.getBool('logged_in') ?? false);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!loaded) {
+    if (_loggedIn == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    return loggedIn ? const ChatListScreen() : const LoginScreen();
+    return _loggedIn! ? const ChatListScreen() : const LoginScreen();
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../data/models/user_account.dart';
 import '../data/storage/prefs_storage.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_text_field.dart';
@@ -14,63 +15,83 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  final nameCtrl = TextEditingController();
-  final userCtrl = TextEditingController();
-  final emailCtrl = TextEditingController();
-  final passCtrl = TextEditingController();
-  final pass2Ctrl = TextEditingController();
-  final storage = PrefsStorage();
-  String error = '';
+  final _nameCtrl = TextEditingController();
+  final _userCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
+  final _pass2Ctrl = TextEditingController();
+  final _storage = PrefsStorage();
+  String _error = '';
+  bool _loading = false;
 
   @override
   void dispose() {
-    nameCtrl.dispose();
-    userCtrl.dispose();
-    emailCtrl.dispose();
-    passCtrl.dispose();
-    pass2Ctrl.dispose();
+    _nameCtrl.dispose();
+    _userCtrl.dispose();
+    _emailCtrl.dispose();
+    _passCtrl.dispose();
+    _pass2Ctrl.dispose();
     super.dispose();
   }
 
-  bool isValidEmail(String s) {
-    return RegExp(r'^[\w\.\-]+@[\w\-]+\.[\w\.\-]+$').hasMatch(s);
-  }
+  bool _isValidEmail(String s) =>
+      RegExp(r'^[\w\.\-]+@[\w\-]+\.[\w\.\-]+$').hasMatch(s);
 
-  Future<void> register() async {
-    final name = nameCtrl.text.trim();
-    final user = userCtrl.text.trim();
-    final email = emailCtrl.text.trim();
-    final pass = passCtrl.text;
-    final pass2 = pass2Ctrl.text;
+  Future<void> _register() async {
+    final name = _nameCtrl.text.trim();
+    final user = _userCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
+    final pass = _passCtrl.text;
+    final pass2 = _pass2Ctrl.text;
 
     if (name.isEmpty || user.isEmpty || email.isEmpty || pass.isEmpty) {
-      setState(() => error = 'Заполните все поля');
+      setState(() => _error = 'Заполните все поля');
       return;
     }
     if (name.length < 2) {
-      setState(() => error = 'Имя должно быть не короче 2 символов');
+      setState(() => _error = 'Имя должно быть не короче 2 символов');
       return;
     }
     if (user.length < 3 || !user.startsWith('@')) {
-      setState(() => error = 'Username должен начинаться с @');
+      setState(() =>
+          _error = 'Username должен начинаться с @ и быть не короче 3 символов');
       return;
     }
-    if (!isValidEmail(email)) {
-      setState(() => error = 'Некорректный email');
+    if (!_isValidEmail(email)) {
+      setState(() => _error = 'Некорректный email');
       return;
     }
     if (pass.length < 8) {
-      setState(() => error = 'Пароль должен быть не короче 8 символов');
+      setState(() => _error = 'Пароль должен быть не короче 8 символов');
       return;
     }
     if (pass != pass2) {
-      setState(() => error = 'Пароли не совпадают');
+      setState(() => _error = 'Пароли не совпадают');
       return;
     }
 
-    setState(() => error = '');
-    await storage.setLoggedIn(true);
-    await storage.saveProfile(name: name, email: email, username: user);
+    setState(() {
+      _error = '';
+      _loading = true;
+    });
+
+    final account = UserAccount(
+      name: name,
+      username: user,
+      email: email,
+      password: pass,
+    );
+    final ok = await _storage.registerUser(account);
+    if (!ok) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Пользователь с таким email или username уже существует';
+      });
+      return;
+    }
+    await _storage.setCurrentUser(account);
+    await _storage.setLoggedIn(true);
     if (!mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
@@ -89,8 +110,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               NavHeader(
                   title: 'Создание аккаунта',
                   onBack: () => Navigator.pop(context)),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text('Заполните данные для регистрации',
@@ -104,39 +125,41 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 child: Column(
                   children: [
                     AppTextField(
-                        label: 'Имя', hint: 'Ваше имя', controller: nameCtrl),
+                        label: 'Имя',
+                        hint: 'Ваше имя',
+                        controller: _nameCtrl),
                     const SizedBox(height: 14),
                     AppTextField(
                         label: 'Username',
                         hint: '@username',
-                        controller: userCtrl),
+                        controller: _userCtrl),
                     const SizedBox(height: 14),
                     AppTextField(
                         label: 'Email',
                         hint: 'email@example.com',
-                        controller: emailCtrl),
+                        controller: _emailCtrl),
                     const SizedBox(height: 14),
                     AppTextField(
                         label: 'Пароль',
                         hint: 'Минимум 8 символов',
                         obscure: true,
-                        controller: passCtrl),
+                        controller: _passCtrl),
                     const SizedBox(height: 14),
                     AppTextField(
                         label: 'Повторите пароль',
                         hint: 'Повторите пароль',
                         obscure: true,
-                        controller: pass2Ctrl),
+                        controller: _pass2Ctrl),
                   ],
                 ),
               ),
-              if (error.isNotEmpty) const SizedBox(height: 12),
-              if (error.isNotEmpty)
+              if (_error.isNotEmpty) const SizedBox(height: 12),
+              if (_error.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: Text(error,
+                    child: Text(_error,
                         style: const TextStyle(
                             color: AppColors.error, fontSize: 13)),
                   ),
@@ -144,14 +167,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
               const SizedBox(height: 28),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                child:
-                    PrimaryButton(label: 'Создать аккаунт', onPressed: register),
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : PrimaryButton(
+                        label: 'Создать аккаунт', onPressed: _register),
               ),
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text('Уже есть аккаунт',
+                  Text('Уже есть аккаунт',
                       style: TextStyle(color: AppColors.textSecondary)),
                   TextButton(
                     onPressed: () => Navigator.pop(context),

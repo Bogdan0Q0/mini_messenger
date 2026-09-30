@@ -25,11 +25,16 @@ class ChatTile extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Container(
-        color: hasUnread ? const Color(0xFFE0F2FE) : Colors.transparent,
+        color: hasUnread
+            ? (AppColors.isDark
+                ? const Color(0xFF1A2D45)
+                : const Color(0xFFE0F2FE))
+            : Colors.transparent,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Row(
           children: [
-            CustomAvatar(initials: contact.initials, color: contact.color, size: 52),
+            CustomAvatar(
+                initials: contact.initials, color: contact.color, size: 52),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -40,7 +45,7 @@ class ChatTile extends StatelessWidget {
                       Expanded(
                         child: Text(
                           contact.name,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
                             color: AppColors.textPrimary,
@@ -49,7 +54,7 @@ class ChatTile extends StatelessWidget {
                       ),
                       Text(
                         time,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 13, color: AppColors.textSecondary),
                       ),
                     ],
@@ -62,7 +67,7 @@ class ChatTile extends StatelessWidget {
                           lastMessage,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 14, color: AppColors.textSecondary),
                         ),
                       ),
@@ -74,7 +79,8 @@ class ChatTile extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(horizontal: 5),
                           decoration: const BoxDecoration(
                             color: AppColors.primary,
-                            borderRadius: BorderRadius.all(Radius.circular(10)),
+                            borderRadius:
+                                BorderRadius.all(Radius.circular(10)),
                           ),
                           alignment: Alignment.center,
                           child: Text(

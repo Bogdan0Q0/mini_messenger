@@ -16,10 +16,11 @@ class SearchField extends StatelessWidget {
       child: Row(
         children: [
           const SizedBox(width: 12),
-          const Icon(Icons.search, size: 18, color: AppColors.textSecondary),
+          Icon(Icons.search, size: 18, color: AppColors.textSecondary),
           const SizedBox(width: 8),
           Expanded(
             child: TextField(
+              style: TextStyle(color: AppColors.textPrimary),
               decoration: InputDecoration(
                 hintText: hint,
                 border: InputBorder.none,
@@ -28,8 +29,8 @@ class SearchField extends StatelessWidget {
                 filled: false,
                 isDense: true,
                 contentPadding: EdgeInsets.zero,
-                hintStyle: const TextStyle(
-                    color: AppColors.textSecondary, fontSize: 15),
+                hintStyle:
+                    TextStyle(color: AppColors.textSecondary, fontSize: 15),
               ),
             ),
           ),

@@ -30,11 +30,15 @@ class _AppTextFieldState extends State<AppTextField> {
       children: [
         if (widget.label.isNotEmpty)
           Text(widget.label,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textPrimary)),
         if (widget.label.isNotEmpty) const SizedBox(height: 6),
         TextField(
           controller: widget.controller,
           obscureText: isPassword && !show,
+          style: TextStyle(color: AppColors.textPrimary),
           decoration: InputDecoration(
             hintText: widget.hint,
             suffixIcon: isPassword
