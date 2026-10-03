@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../utils/text_utils.dart';
 
 class Contact {
   final String id;
@@ -15,35 +16,73 @@ class Contact {
     required this.color,
   });
 
+  static const _avatarColors = [
+    Color(0xFF3478F6),
+    Color(0xFF34C759),
+    Color(0xFFFF9500),
+    Color(0xFFAF52DE),
+    Color(0xFFFF3B30),
+  ];
+
+  /// Контакт из ответа REST API (jsonplaceholder.typicode.com/users).
+  factory Contact.fromApi(Map<String, dynamic> j) {
+    final id = '${j['id'] ?? ''}';
+    final rawName = j['name'];
+    final name = rawName is String && rawName.trim().isNotEmpty
+        ? rawName.trim()
+        : 'User';
+    final rawUser = j['username'];
+    final username = rawUser is String ? rawUser : 'user';
+    final colorIndex = (int.tryParse(id) ?? 0) % _avatarColors.length;
+    return Contact(
+      id: id,
+      name: name,
+      username: '@$username',
+      initials: initialsOf(name),
+      color: _avatarColors[colorIndex],
+    );
+  }
+
+  /// Контакт из локального файла contacts.json.
   factory Contact.fromJson(Map<String, dynamic> j) {
     final rawName = j['name'];
-    final name = (rawName is String) ? rawName : 'User';
-    final parts = name.split(' ');
-    final initialsBuffer = StringBuffer();
-    for (var i = 0; i < parts.length && i < 2; i++) {
-      final p = parts[i];
-      if (p.isNotEmpty) initialsBuffer.write(p[0]);
-    }
-    final initialsRaw = initialsBuffer.toString().toUpperCase();
-    final initials = initialsRaw.isEmpty ? 'U' : initialsRaw;
-    final colors = [
-      const Color(0xFF3478F6),
-      const Color(0xFF34C759),
-      const Color(0xFFFF9500),
-      const Color(0xFFAF52DE),
-      const Color(0xFFFF3B30),
-    ];
-    final rawId = j['id'];
-    final idInt = (rawId is int) ? rawId : 1;
-    final rawUser = j['username'];
-    final userStr = (rawUser is String) ? rawUser : 'user';
+    final name = rawName is String && rawName.trim().isNotEmpty
+        ? rawName.trim()
+        : 'User';
+    final rawInitials = j['initials'];
     return Contact(
-      id: rawId.toString(),
+      id: '${j['id']}',
       name: name,
-      username: '@$userStr',
-      initials: initials,
-      color: colors[idInt % colors.length],
+      username: (j['username'] as String?) ?? '@user',
+      initials: rawInitials is String && rawInitials.isNotEmpty
+          ? rawInitials
+          : initialsOf(name),
+      color: Color((j['color'] as int?) ?? _avatarColors.first.toARGB32()),
     );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'username': username,
+        'initials': initials,
+        'color': color.toARGB32(),
+      };
+
+  /// Копия с новым именем; инициалы пересчитываются.
+  Contact withName(String newName) => Contact(
+        id: id,
+        name: newName,
+        username: username,
+        initials: initialsOf(newName),
+        color: color,
+      );
+
+  /// Подходит ли контакт под поисковый запрос (по имени или @username).
+  bool matches(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return name.toLowerCase().contains(q) || username.toLowerCase().contains(q);
   }
 }
 

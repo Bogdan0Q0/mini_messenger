@@ -38,6 +38,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       RegExp(r'^[\w\.\-]+@[\w\-]+\.[\w\.\-]+$').hasMatch(s);
 
   Future<void> _register() async {
+    if (_loading) return;
     final name = _nameCtrl.text.trim();
     final user = _userCtrl.text.trim();
     final email = _emailCtrl.text.trim();
@@ -75,23 +76,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _loading = true;
     });
 
-    final account = UserAccount(
+    final account = UserAccount.create(
       name: name,
       username: user,
       email: email,
       password: pass,
     );
-    final ok = await _storage.registerUser(account);
-    if (!ok) {
+    try {
+      final ok = await _storage.registerUser(account);
+      if (!ok) {
+        if (!mounted) return;
+        setState(() {
+          _loading = false;
+          _error = 'Пользователь с таким email или username уже существует';
+        });
+        return;
+      }
+      await _storage.setCurrentUser(account);
+      await _storage.setLoggedIn(true);
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = 'Пользователь с таким email или username уже существует';
+        _error = 'Не удалось создать аккаунт. Попробуйте ещё раз';
       });
       return;
     }
-    await _storage.setCurrentUser(account);
-    await _storage.setLoggedIn(true);
     if (!mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
@@ -116,7 +126,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   alignment: Alignment.centerLeft,
                   child: Text('Заполните данные для регистрации',
                       style: TextStyle(
-                          color: AppColors.textSecondary, fontSize: 14)),
+                          color: context.palette.textSecondary, fontSize: 14)),
                 ),
               ),
               const SizedBox(height: 28),
@@ -127,28 +137,35 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     AppTextField(
                         label: 'Имя',
                         hint: 'Ваше имя',
+                        textInputAction: TextInputAction.next,
                         controller: _nameCtrl),
                     const SizedBox(height: 14),
                     AppTextField(
                         label: 'Username',
                         hint: '@username',
+                        textInputAction: TextInputAction.next,
                         controller: _userCtrl),
                     const SizedBox(height: 14),
                     AppTextField(
                         label: 'Email',
                         hint: 'email@example.com',
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
                         controller: _emailCtrl),
                     const SizedBox(height: 14),
                     AppTextField(
                         label: 'Пароль',
                         hint: 'Минимум 8 символов',
                         obscure: true,
+                        textInputAction: TextInputAction.next,
                         controller: _passCtrl),
                     const SizedBox(height: 14),
                     AppTextField(
                         label: 'Повторите пароль',
                         hint: 'Повторите пароль',
                         obscure: true,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _register(),
                         controller: _pass2Ctrl),
                   ],
                 ),
@@ -177,7 +194,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text('Уже есть аккаунт',
-                      style: TextStyle(color: AppColors.textSecondary)),
+                      style: TextStyle(color: context.palette.textSecondary)),
                   TextButton(
                     onPressed: () => Navigator.pop(context),
                     child: const Text('Войти',

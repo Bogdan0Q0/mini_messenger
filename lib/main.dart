@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'app.dart';
+import 'data/storage/prefs_storage.dart';
+import 'state/session_controller.dart';
+import 'state/theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final prefs = await SharedPreferences.getInstance();
-  darkModeNotifier.value = prefs.getBool('theme_mode') ?? false;
-  runApp(const MiniChatApp());
+  await PrefsStorage().migrateLegacyData();
+  final theme = ThemeController();
+  final session = SessionController();
+  await Future.wait([theme.load(), session.load()]);
+  runApp(MiniChatApp(theme: theme, session: session));
 }

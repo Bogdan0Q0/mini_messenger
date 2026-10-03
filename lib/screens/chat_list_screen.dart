@@ -1,44 +1,37 @@
 import 'package:flutter/material.dart';
-import '../data/models/contact.dart';
-import '../data/repositories/contacts_repository.dart';
-import '../data/storage/prefs_storage.dart';
+import 'package:provider/provider.dart';
+import '../state/chat_list_controller.dart';
 import '../theme/app_theme.dart';
+import '../utils/navigation.dart';
 import '../widgets/chat_tile.dart';
+import '../widgets/search_field.dart';
 import 'dialog_screen.dart';
 import 'new_chat_screen.dart';
 import 'profile_screen.dart';
 
-class ChatData {
-  final Contact contact;
-  final String lastMessage;
-  final String time;
-  final int unread;
-  final int ts;
-  const ChatData(
-      this.contact, this.lastMessage, this.time, this.unread, this.ts);
-}
-
-class ChatListScreen extends StatefulWidget {
+/// Экран «Чаты». Состояние (контакты, превью, поиск) живёт в
+/// [ChatListController] и подаётся через Provider.
+class ChatListScreen extends StatelessWidget {
   const ChatListScreen({super.key});
 
   @override
-  State<ChatListScreen> createState() => _ChatListScreenState();
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider<ChatListController>(
+      create: (_) => ChatListController()..load(),
+      child: const _ChatListView(),
+    );
+  }
 }
 
-class _ChatListScreenState extends State<ChatListScreen> {
-  final repo = ContactsRepository();
-  final storage = PrefsStorage();
-  final _searchCtrl = TextEditingController();
-  List<Contact> contacts = [];
-  List<Contact> filtered = [];
-  Map<String, Map<String, dynamic>> chatInfo = {};
-  bool loading = true;
+class _ChatListView extends StatefulWidget {
+  const _ChatListView();
 
   @override
-  void initState() {
-    super.initState();
-    load();
-  }
+  State<_ChatListView> createState() => _ChatListViewState();
+}
+
+class _ChatListViewState extends State<_ChatListView> {
+  final _searchCtrl = TextEditingController();
 
   @override
   void dispose() {
@@ -46,67 +39,22 @@ class _ChatListScreenState extends State<ChatListScreen> {
     super.dispose();
   }
 
-  Future<void> load() async {
-    final data = await repo.fetchContacts();
-    final info = await storage.getChatInfo();
+  /// Открывает экран. Вернувшись, сбрасывает поиск (без фокуса и клавиатуры)
+  /// и перечитывает данные — контакт могли переименовать или удалить.
+  Future<void> _open(Widget screen) async {
+    final controller = context.read<ChatListController>();
+    await pushScreen<void>(context, screen);
     if (!mounted) return;
-    setState(() {
-      contacts = data;
-      filtered = data;
-      chatInfo = info;
-      loading = false;
-    });
-  }
-
-  void _onSearch(String q) {
-    final query = q.trim().toLowerCase();
-    if (query.isEmpty) {
-      setState(() => filtered = contacts);
-      return;
-    }
-    setState(() {
-      filtered = contacts.where((c) {
-        return c.name.toLowerCase().contains(query) ||
-            c.username.toLowerCase().contains(query);
-      }).toList();
-    });
-  }
-
-  Future<void> _openDialog(Contact c) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => DialogScreen(contact: c)),
-    );
-    if (mounted) await load();
-  }
-
-  List<ChatData> _chatsFrom(List<Contact> source) {
-    final result = <ChatData>[];
-    for (final c in source) {
-      final info = chatInfo[c.id];
-      final text = (info?['text'] as String?) ?? '';
-      final time = (info?['time'] as String?) ?? '';
-      final ts = (info?['ts'] as int?) ?? 0;
-      result.add(ChatData(
-        c,
-        text.isEmpty ? 'Начните диалог' : text,
-        time,
-        0,
-        ts,
-      ));
-    }
-    result.sort((a, b) {
-      if (a.ts != b.ts) return b.ts.compareTo(a.ts);
-      return a.contact.name
-          .toLowerCase()
-          .compareTo(b.contact.name.toLowerCase());
-    });
-    return result;
+    _searchCtrl.clear();
+    controller.setQuery('');
+    await controller.load();
   }
 
   @override
   Widget build(BuildContext context) {
-    final chats = _chatsFrom(filtered);
+    final palette = context.palette;
+    final state = context.watch<ChatListController>();
+    final chats = state.chats;
     return Scaffold(
       body: SafeArea(
         child: Stack(
@@ -122,29 +70,15 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           style: TextStyle(
                               fontSize: 28,
                               fontWeight: FontWeight.bold,
-                              color: AppColors.textPrimary)),
+                              color: palette.textPrimary)),
                       const Spacer(),
                       IconButton(
                         icon: const Icon(Icons.edit_outlined,
                             color: AppColors.primary),
-                        onPressed: () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const NewChatScreen()),
-                          );
-                          if (mounted) await load();
-                        },
+                        onPressed: () => _open(const NewChatScreen()),
                       ),
                       InkWell(
-                        onTap: () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const ProfileScreen()),
-                          );
-                          if (mounted) await load();
-                        },
+                        onTap: () => _open(const ProfileScreen()),
                         child: Container(
                           width: 32,
                           height: 32,
@@ -161,51 +95,21 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Container(
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: AppColors.bubbleIn,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      children: [
-                        const SizedBox(width: 12),
-                        Icon(Icons.search,
-                            size: 18, color: AppColors.textSecondary),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: _searchCtrl,
-                            onChanged: _onSearch,
-                            style:
-                                TextStyle(color: AppColors.textPrimary),
-                            decoration: InputDecoration(
-                              hintText: 'Поиск',
-                              border: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              filled: false,
-                              isDense: true,
-                              contentPadding: EdgeInsets.zero,
-                              hintStyle: TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 15),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                  child: SearchField(
+                    hint: 'Поиск',
+                    controller: _searchCtrl,
+                    onChanged: context.read<ChatListController>().setQuery,
                   ),
                 ),
                 const SizedBox(height: 8),
                 Expanded(
-                  child: loading
+                  child: state.loading
                       ? const Center(child: CircularProgressIndicator())
                       : chats.isEmpty
                           ? Center(
                               child: Text('Ничего не найдено',
                                   style: TextStyle(
-                                      color: AppColors.textSecondary)),
+                                      color: palette.textSecondary)),
                             )
                           : ListView.separated(
                               itemCount: chats.length,
@@ -213,7 +117,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                 height: 0.5,
                                 thickness: 0.5,
                                 indent: 84,
-                                color: AppColors.divider,
+                                color: palette.divider,
                               ),
                               itemBuilder: (_, i) {
                                 final chat = chats[i];
@@ -222,7 +126,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                   lastMessage: chat.lastMessage,
                                   time: chat.time,
                                   unread: chat.unread,
-                                  onTap: () => _openDialog(chat.contact),
+                                  onTap: () => _open(
+                                      DialogScreen(contact: chat.contact)),
                                 );
                               },
                             ),
@@ -234,14 +139,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
               right: 24,
               child: FloatingActionButton(
                 backgroundColor: AppColors.primary,
-                onPressed: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const NewChatScreen()),
-                  );
-                  if (mounted) await load();
-                },
+                onPressed: () => _open(const NewChatScreen()),
                 child: const Icon(Icons.add, color: Colors.white),
               ),
             ),

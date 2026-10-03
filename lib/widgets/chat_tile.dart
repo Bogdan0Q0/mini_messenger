@@ -25,11 +25,7 @@ class ChatTile extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Container(
-        color: hasUnread
-            ? (AppColors.isDark
-                ? const Color(0xFF1A2D45)
-                : const Color(0xFFE0F2FE))
-            : Colors.transparent,
+        color: hasUnread ? context.palette.unreadBg : Colors.transparent,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Row(
           children: [
@@ -48,14 +44,14 @@ class ChatTile extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
+                            color: context.palette.textPrimary,
                           ),
                         ),
                       ),
                       Text(
                         time,
                         style: TextStyle(
-                            fontSize: 13, color: AppColors.textSecondary),
+                            fontSize: 13, color: context.palette.textSecondary),
                       ),
                     ],
                   ),
@@ -68,7 +64,7 @@ class ChatTile extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              fontSize: 14, color: AppColors.textSecondary),
+                              fontSize: 14, color: context.palette.textSecondary),
                         ),
                       ),
                       if (hasUnread) const SizedBox(width: 8),

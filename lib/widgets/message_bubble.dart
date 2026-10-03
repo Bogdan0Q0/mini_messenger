@@ -8,12 +8,16 @@ class MessageBubble extends StatelessWidget {
   final bool outgoing;
   final String? imagePath;
 
+  /// Нажатие на фото (например, открыть его на весь экран).
+  final VoidCallback? onImageTap;
+
   const MessageBubble({
     super.key,
     required this.text,
     required this.time,
     required this.outgoing,
     this.imagePath,
+    this.onImageTap,
   });
 
   @override
@@ -30,7 +34,7 @@ class MessageBubble extends StatelessWidget {
         decoration: BoxDecoration(
           color: hasImage && !hasText
               ? Colors.transparent
-              : (outgoing ? AppColors.primary : AppColors.bubbleIn),
+              : (outgoing ? AppColors.primary : context.palette.bubbleIn),
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(18),
             topRight: const Radius.circular(18),
@@ -46,19 +50,22 @@ class MessageBubble extends StatelessWidget {
             if (hasImage)
               Padding(
                 padding: EdgeInsets.all(hasText ? 6 : 0),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: Image.file(
-                    File(imagePath!),
-                    width: 240,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                child: GestureDetector(
+                  onTap: onImageTap,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Image.file(
+                      File(imagePath!),
                       width: 240,
-                      height: 160,
-                      color: AppColors.divider,
-                      alignment: Alignment.center,
-                      child: Icon(Icons.broken_image,
-                          color: AppColors.textSecondary),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Container(
+                        width: 240,
+                        height: 160,
+                        color: context.palette.divider,
+                        alignment: Alignment.center,
+                        child: Icon(Icons.broken_image,
+                            color: context.palette.textSecondary),
+                      ),
                     ),
                   ),
                 ),
@@ -69,7 +76,7 @@ class MessageBubble extends StatelessWidget {
                 child: Text(
                   text,
                   style: TextStyle(
-                    color: outgoing ? Colors.white : AppColors.textPrimary,
+                    color: outgoing ? Colors.white : context.palette.textPrimary,
                     fontSize: 15,
                     height: 1.4,
                   ),
@@ -83,7 +90,7 @@ class MessageBubble extends StatelessWidget {
                   fontSize: 11,
                   color: hasImage && !hasText
                       ? Colors.white
-                      : (outgoing ? Colors.white70 : AppColors.textSecondary),
+                      : (outgoing ? Colors.white70 : context.palette.textSecondary),
                 ),
               ),
             ),

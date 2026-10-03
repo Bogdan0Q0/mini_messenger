@@ -38,7 +38,7 @@ class NavHeader extends StatelessWidget {
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
+                color: context.palette.textPrimary,
               ),
             ),
           ),

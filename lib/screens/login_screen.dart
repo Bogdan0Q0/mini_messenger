@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../data/models/user_account.dart';
 import '../data/storage/prefs_storage.dart';
 import '../theme/app_theme.dart';
 import '../widgets/primary_button.dart';
@@ -27,15 +28,12 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
+    if (_loading) return;
     final login = _loginCtrl.text.trim();
     final pass = _passCtrl.text;
 
     if (login.isEmpty || pass.isEmpty) {
       setState(() => _error = 'Заполните все поля');
-      return;
-    }
-    if (pass.length < 6) {
-      setState(() => _error = 'Пароль должен быть не короче 6 символов');
       return;
     }
 
@@ -44,7 +42,17 @@ class _LoginScreenState extends State<LoginScreen> {
       _loading = true;
     });
 
-    final user = await _storage.loginUser(login, pass);
+    UserAccount? user;
+    try {
+      user = await _storage.loginUser(login, pass);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Не удалось выполнить вход. Попробуйте ещё раз';
+      });
+      return;
+    }
     if (user == null) {
       if (!mounted) return;
       setState(() {
@@ -66,78 +74,90 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28),
-          child: Column(
-            children: [
-              const SizedBox(height: 60),
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Icon(Icons.chat_bubble,
-                    color: Colors.white, size: 36),
-              ),
-              const SizedBox(height: 16),
-              Text('MiniChat',
-                  style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary)),
-              const SizedBox(height: 6),
-              Text('Общайтесь просто и удобно',
-                  style:
-                      TextStyle(fontSize: 15, color: AppColors.textSecondary)),
-              const SizedBox(height: 42),
-              TextField(
-                controller: _loginCtrl,
-                style: TextStyle(color: AppColors.textPrimary),
-                decoration: const InputDecoration(
-                    hintText: 'Email или @username'),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: _passCtrl,
-                obscureText: true,
-                style: TextStyle(color: AppColors.textPrimary),
-                decoration: const InputDecoration(hintText: 'Пароль'),
-              ),
-              if (_error.isNotEmpty) const SizedBox(height: 10),
-              if (_error.isNotEmpty)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(_error,
-                      style: const TextStyle(
-                          color: AppColors.error, fontSize: 13)),
-                ),
-              const SizedBox(height: 20),
-              _loading
-                  ? const CircularProgressIndicator()
-                  : PrimaryButton(label: 'Войти', onPressed: _login),
-              const Spacer(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Нет аккаунта',
-                      style: TextStyle(color: AppColors.textSecondary)),
-                  TextButton(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const RegisterScreen()),
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: IntrinsicHeight(
+                child: Column(
+                  children: [
+                    const SizedBox(height: 60),
+                    Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Icon(Icons.chat_bubble,
+                          color: Colors.white, size: 36),
                     ),
-                    child: const Text('Зарегистрироваться',
+                    const SizedBox(height: 16),
+                    Text('MiniChat',
                         style: TextStyle(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w600)),
-                  ),
-                ],
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: context.palette.textPrimary)),
+                    const SizedBox(height: 6),
+                    Text('Общайтесь просто и удобно',
+                        style:
+                            TextStyle(fontSize: 15, color: context.palette.textSecondary)),
+                    const SizedBox(height: 42),
+                    TextField(
+                      controller: _loginCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      style: TextStyle(color: context.palette.textPrimary),
+                      decoration: const InputDecoration(
+                          hintText: 'Email или @username'),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _passCtrl,
+                      obscureText: true,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _login(),
+                      style: TextStyle(color: context.palette.textPrimary),
+                      decoration: const InputDecoration(hintText: 'Пароль'),
+                    ),
+                    if (_error.isNotEmpty) const SizedBox(height: 10),
+                    if (_error.isNotEmpty)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(_error,
+                            style: const TextStyle(
+                                color: AppColors.error, fontSize: 13)),
+                      ),
+                    const SizedBox(height: 20),
+                    _loading
+                        ? const CircularProgressIndicator()
+                        : PrimaryButton(label: 'Войти', onPressed: _login),
+                    const Spacer(),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('Нет аккаунта',
+                            style: TextStyle(color: context.palette.textSecondary)),
+                        TextButton(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const RegisterScreen()),
+                          ),
+                          child: const Text('Зарегистрироваться',
+                              style: TextStyle(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w600)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                ),
               ),
-              const SizedBox(height: 24),
-            ],
+            ),
           ),
         ),
       ),

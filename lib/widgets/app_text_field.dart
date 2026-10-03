@@ -6,6 +6,9 @@ class AppTextField extends StatefulWidget {
   final String hint;
   final bool obscure;
   final TextEditingController controller;
+  final TextInputType? keyboardType;
+  final TextInputAction? textInputAction;
+  final ValueChanged<String>? onSubmitted;
 
   const AppTextField({
     super.key,
@@ -13,6 +16,9 @@ class AppTextField extends StatefulWidget {
     required this.hint,
     this.obscure = false,
     required this.controller,
+    this.keyboardType,
+    this.textInputAction,
+    this.onSubmitted,
   });
 
   @override
@@ -33,19 +39,22 @@ class _AppTextFieldState extends State<AppTextField> {
               style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
-                  color: AppColors.textPrimary)),
+                  color: context.palette.textPrimary)),
         if (widget.label.isNotEmpty) const SizedBox(height: 6),
         TextField(
           controller: widget.controller,
           obscureText: isPassword && !show,
-          style: TextStyle(color: AppColors.textPrimary),
+          keyboardType: widget.keyboardType,
+          textInputAction: widget.textInputAction,
+          onSubmitted: widget.onSubmitted,
+          style: TextStyle(color: context.palette.textPrimary),
           decoration: InputDecoration(
             hintText: widget.hint,
             suffixIcon: isPassword
                 ? IconButton(
                     icon: Icon(
                       show ? Icons.visibility_off : Icons.visibility,
-                      color: AppColors.textSecondary,
+                      color: context.palette.textSecondary,
                       size: 20,
                     ),
                     onPressed: () => setState(() => show = !show),

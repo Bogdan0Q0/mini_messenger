@@ -1,11 +1,17 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../data/models/contact.dart';
 import '../data/models/message.dart';
+import '../data/repositories/contacts_repository.dart';
+import '../data/storage/media_storage.dart';
 import '../data/storage/prefs_storage.dart';
 import '../theme/app_theme.dart';
+import '../utils/navigation.dart';
 import '../widgets/custom_avatar.dart';
 import '../widgets/message_bubble.dart';
+import 'contact_profile_screen.dart';
+import 'photo_viewer_screen.dart';
 
 class DialogScreen extends StatefulWidget {
   final Contact contact;
@@ -18,10 +24,19 @@ class DialogScreen extends StatefulWidget {
 class _DialogScreenState extends State<DialogScreen> {
   final messages = <Message>[];
   final input = TextEditingController();
+  final _focus = FocusNode();
+  final _scroll = ScrollController();
   final storage = PrefsStorage();
+  final _contacts = ContactsRepository.shared;
+  final _media = MediaStorage();
+  final _random = Random();
+  late Contact _contact = widget.contact;
   bool loaded = false;
-  bool contactTyping = false;
-  String currentName = '';
+
+  /// Сколько ответов собеседника «печатается» сейчас. Счётчик, а не флаг,
+  /// чтобы индикатор не гас, пока ждёт ответа хотя бы одно сообщение.
+  int _typingCount = 0;
+  bool get contactTyping => _typingCount > 0;
 
   static const autoReplies = [
     'Привет!',
@@ -41,14 +56,38 @@ class _DialogScreenState extends State<DialogScreen> {
   @override
   void initState() {
     super.initState();
-    currentName = widget.contact.name;
+    _focus.addListener(_onFocusChange);
     loadMessages();
   }
 
   @override
   void dispose() {
+    _focus.removeListener(_onFocusChange);
+    _focus.dispose();
+    _scroll.dispose();
     input.dispose();
     super.dispose();
+  }
+
+  /// Когда открывается клавиатура, список сжимается — прокручиваем к
+  /// последнему сообщению, чтобы оно не оказалось под клавиатурой.
+  void _onFocusChange() {
+    if (_focus.hasFocus) {
+      Future.delayed(const Duration(milliseconds: 300), _scrollToEnd);
+    }
+  }
+
+  void _scrollToEnd({bool animate = true}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      final end = _scroll.position.maxScrollExtent;
+      if (animate) {
+        _scroll.animateTo(end,
+            duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+      } else {
+        _scroll.jumpTo(end);
+      }
+    });
   }
 
   String now() {
@@ -56,50 +95,14 @@ class _DialogScreenState extends State<DialogScreen> {
     return '${n.hour}:${n.minute.toString().padLeft(2, '0')}';
   }
 
-  String previewOf(Message m) {
-    if (m.imagePath != null && m.imagePath!.isNotEmpty && m.text.isEmpty) {
-      return 'Фото';
-    }
-    return m.text;
-  }
-
-  Future<void> touch() async {
-    if (messages.isEmpty) {
-      await storage.markChatOpened(widget.contact.id);
-      return;
-    }
-    final last = messages.last;
-    await storage.updateChatPreview(
-      widget.contact.id,
-      previewOf(last),
-      last.time,
-    );
-  }
-
   Future<void> loadMessages() async {
-    final saved = await storage.loadMessages(widget.contact.id);
-    if (saved.isNotEmpty) {
-      messages.addAll(saved);
-    } else {
-      messages.addAll([
-        const Message(
-            id: 1, text: 'Привет, как дела', time: '14:30', outgoing: false),
-        const Message(
-            id: 2,
-            text: 'Привет, все отлично, а у тебя',
-            time: '14:31',
-            outgoing: true),
-        const Message(id: 3, text: 'Тоже хорошо', time: '14:31', outgoing: false),
-        const Message(
-            id: 4, text: 'Что делаешь сегодня', time: '14:32', outgoing: true),
-      ]);
-    }
-    if (mounted) setState(() => loaded = true);
-    await touch();
-  }
-
-  Future<void> persist() async {
-    await storage.saveMessages(widget.contact.id, messages);
+    final saved = await storage.loadMessages(_contact.id);
+    messages.addAll(saved);
+    if (!mounted) return;
+    setState(() => loaded = true);
+    _scrollToEnd(animate: false);
+    // Открытый чат поднимается в списке наверх.
+    await storage.markChatOpened(_contact.id);
   }
 
   void snack(String msg, bool error) {
@@ -111,6 +114,14 @@ class _DialogScreenState extends State<DialogScreen> {
     );
   }
 
+  /// Добавляет сообщение в чат, сохраняет переписку и обновляет превью.
+  Future<void> _addMessage(Message message, {required String preview}) async {
+    setState(() => messages.add(message));
+    _scrollToEnd();
+    await storage.saveMessages(_contact.id, messages);
+    await storage.updateChatPreview(_contact.id, preview, message.time);
+  }
+
   Future<void> sendText() async {
     final text = input.text.trim();
     if (text.isEmpty) return;
@@ -118,181 +129,101 @@ class _DialogScreenState extends State<DialogScreen> {
       snack('Сообщение слишком длинное', true);
       return;
     }
-    setState(() {
-      messages.add(Message(
-        id: DateTime.now().millisecondsSinceEpoch,
+    input.clear();
+    await _addMessage(
+      Message(
+        id: DateTime.now().microsecondsSinceEpoch,
         text: text,
         time: now(),
         outgoing: true,
-      ));
-      input.clear();
-    });
-    await persist();
-    await storage.updateChatPreview(widget.contact.id, text, messages.last.time);
+      ),
+      preview: text,
+    );
     scheduleReply();
   }
 
   Future<void> sendPhoto() async {
     try {
-      final picker = ImagePicker();
-      final picked = await picker.pickImage(
+      final picked = await ImagePicker().pickImage(
         source: ImageSource.gallery,
         maxWidth: 1024,
         maxHeight: 1024,
         imageQuality: 80,
       );
       if (picked == null) return;
-      setState(() {
-        messages.add(Message(
-          id: DateTime.now().millisecondsSinceEpoch,
+      final userId = await storage.getCurrentUserId();
+      if (userId == null) return;
+      // Копия в папке приложения: временный файл image_picker могут стереть.
+      final savedPath = await _media.importImage(
+        picked.path,
+        userId: userId,
+        folder: MediaStorage.chatFolder(_contact.id),
+      );
+      if (!mounted) return;
+      await _addMessage(
+        Message(
+          id: DateTime.now().microsecondsSinceEpoch,
           text: '',
           time: now(),
           outgoing: true,
-          imagePath: picked.path,
-        ));
-      });
-      await persist();
-      await storage.updateChatPreview(
-          widget.contact.id, 'Фото', messages.last.time);
+          imagePath: savedPath,
+        ),
+        preview: 'Фото',
+      );
       scheduleReply();
     } catch (e) {
-      snack('Не удалось выбрать фото', true);
+      if (mounted) snack('Не удалось отправить фото', true);
     }
   }
 
   Future<void> scheduleReply() async {
-    setState(() => contactTyping = true);
-    final ms = 800 + (DateTime.now().microsecond % 1200);
-    await Future.delayed(Duration(milliseconds: ms));
+    setState(() => _typingCount++);
+    _scrollToEnd();
+    await Future.delayed(Duration(milliseconds: 800 + _random.nextInt(1200)));
     if (!mounted) return;
-    final reply = autoReplies[DateTime.now().millisecond % autoReplies.length];
-    setState(() {
-      contactTyping = false;
-      messages.add(Message(
-        id: DateTime.now().millisecondsSinceEpoch,
+    setState(() => _typingCount--);
+    final reply = autoReplies[_random.nextInt(autoReplies.length)];
+    await _addMessage(
+      Message(
+        id: DateTime.now().microsecondsSinceEpoch,
         text: reply,
         time: now(),
         outgoing: false,
-      ));
-    });
-    await persist();
-    await storage.updateChatPreview(
-        widget.contact.id, reply, messages.last.time);
-  }
-
-  Future<void> showMenu() async {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.divider,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 12),
-            ListTile(
-              leading: Icon(Icons.edit_outlined, color: AppColors.primary),
-              title: Text('Переименовать',
-                  style: TextStyle(color: AppColors.textPrimary)),
-              onTap: () {
-                Navigator.pop(context);
-                renameContact();
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.delete_outline, color: AppColors.error),
-              title: Text('Удалить',
-                  style: TextStyle(color: AppColors.error)),
-              onTap: () {
-                Navigator.pop(context);
-                confirmDelete();
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+      preview: reply,
     );
   }
 
-  Future<void> renameContact() async {
-    final ctrl = TextEditingController(text: currentName);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('Переименовать',
-            style: TextStyle(color: AppColors.textPrimary)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          style: TextStyle(color: AppColors.textPrimary),
-          decoration: const InputDecoration(hintText: 'Новое имя'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Отмена',
-                style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-            child: Text('Сохранить',
-                style: TextStyle(color: AppColors.primary)),
-          ),
-        ],
-      ),
+  /// Открывает фото из чата на весь экран, с листанием по всем фото чата.
+  void _openPhoto(Message message) {
+    final photos = [
+      for (final m in messages)
+        if (m.imagePath != null && m.imagePath!.isNotEmpty) m.imagePath!,
+    ];
+    final index = photos.indexOf(message.imagePath!);
+    pushScreen<void>(
+      context,
+      PhotoViewerScreen(paths: photos, initialIndex: index < 0 ? 0 : index),
     );
-    if (result == null || result.isEmpty) return;
-    await storage.setNameOverride(widget.contact.id, result);
+  }
+
+  /// Профиль контакта: переименование, удаление, фото. Если контакт там
+  /// удалили, чат закрывается; если переименовали — обновляется имя.
+  Future<void> _openProfile() async {
+    await pushScreen<void>(context, ContactProfileScreen(contact: _contact));
     if (!mounted) return;
-    setState(() => currentName = result);
-    snack('Контакт переименован', false);
-  }
-
-  Future<void> confirmDelete() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('Удалить чат?',
-            style: TextStyle(color: AppColors.textPrimary)),
-        content: Text('Контакт и вся переписка будут удалены.',
-            style: TextStyle(color: AppColors.textSecondary)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('Отмена',
-                style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child:
-                Text('Удалить', style: TextStyle(color: AppColors.error)),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    await storage.saveMessages(widget.contact.id, []);
-    await storage.addDeletedId(widget.contact.id);
+    final updated = await _contacts.findById(_contact.id);
     if (!mounted) return;
-    Navigator.pop(context, true);
+    if (updated == null) {
+      Navigator.pop(context, true);
+      return;
+    }
+    setState(() => _contact = updated);
   }
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -300,9 +231,9 @@ class _DialogScreenState extends State<DialogScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: AppColors.surface,
-                border: Border(
-                    bottom: BorderSide(color: AppColors.divider, width: 0.5)),
+                color: palette.surface,
+                border:
+                    Border(bottom: BorderSide(color: palette.divider, width: 0.5)),
               ),
               child: Row(
                 children: [
@@ -312,101 +243,79 @@ class _DialogScreenState extends State<DialogScreen> {
                         color: AppColors.primary, size: 28),
                     onPressed: () => Navigator.pop(context),
                   ),
-                  CustomAvatar(
-                    initials: _initialsFor(currentName),
-                    color: widget.contact.color,
-                    size: 38,
-                  ),
-                  const SizedBox(width: 12),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(currentName,
-                            style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary)),
-                        Text(
-                          contactTyping ? 'печатает...' : 'В сети',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: contactTyping
-                                  ? AppColors.primary
-                                  : AppColors.success),
-                        ),
-                      ],
+                    child: InkWell(
+                      onTap: _openProfile,
+                      child: Row(
+                        children: [
+                          CustomAvatar(
+                            initials: _contact.initials,
+                            color: _contact.color,
+                            size: 38,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(_contact.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: palette.textPrimary)),
+                                Text(
+                                  contactTyping ? 'печатает...' : 'В сети',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: contactTyping
+                                          ? AppColors.primary
+                                          : AppColors.success),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.more_vert,
-                        color: AppColors.textSecondary),
-                    onPressed: showMenu,
                   ),
                 ],
               ),
             ),
-            Expanded(
-              child: !loaded
-                  ? const Center(child: CircularProgressIndicator())
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 16),
-                      itemCount: messages.length + (contactTyping ? 1 : 0),
-                      itemBuilder: (_, i) {
-                        if (contactTyping && i == messages.length) {
-                          return Align(
-                            alignment: Alignment.centerLeft,
-                            child: Container(
-                              margin: const EdgeInsets.only(bottom: 6),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 9),
-                              decoration: BoxDecoration(
-                                color: AppColors.bubbleIn,
-                                borderRadius: BorderRadius.circular(18),
-                              ),
-                              child: Text('...',
-                                  style: TextStyle(
-                                      color: AppColors.textSecondary,
-                                      fontSize: 15)),
-                            ),
-                          );
-                        }
-                        final m = messages[i];
-                        return MessageBubble(
-                          text: m.text,
-                          time: m.time,
-                          outgoing: m.outgoing,
-                          imagePath: m.imagePath,
-                        );
-                      },
-                    ),
-            ),
+            Expanded(child: _buildMessages(palette)),
             Container(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
               decoration: BoxDecoration(
-                color: AppColors.surface,
-                border: Border(
-                    top: BorderSide(color: AppColors.divider, width: 0.5)),
+                color: palette.surface,
+                border:
+                    Border(top: BorderSide(color: palette.divider, width: 0.5)),
               ),
               child: Row(
                 children: [
                   IconButton(
-                    icon: Icon(Icons.attach_file,
-                        color: AppColors.textSecondary),
+                    icon: Icon(Icons.attach_file, color: palette.textSecondary),
                     onPressed: sendPhoto,
                   ),
                   Expanded(
                     child: Container(
                       height: 40,
                       decoration: BoxDecoration(
-                        color: AppColors.bubbleIn,
+                        color: palette.bubbleIn,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: TextField(
                         controller: input,
-                        onSubmitted: (_) => sendText(),
-                        style: TextStyle(color: AppColors.textPrimary),
+                        focusNode: _focus,
+                        textInputAction: TextInputAction.send,
+                        textCapitalization: TextCapitalization.sentences,
+                        // После отправки фокус остаётся в поле, чтобы можно
+                        // было сразу писать дальше.
+                        onSubmitted: (_) {
+                          sendText();
+                          _focus.requestFocus();
+                        },
+                        style: TextStyle(color: palette.textPrimary),
                         decoration: InputDecoration(
                           hintText: 'Сообщение...',
                           border: InputBorder.none,
@@ -415,8 +324,7 @@ class _DialogScreenState extends State<DialogScreen> {
                           filled: false,
                           contentPadding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 10),
-                          hintStyle:
-                              TextStyle(color: AppColors.textSecondary),
+                          hintStyle: TextStyle(color: palette.textSecondary),
                         ),
                       ),
                     ),
@@ -431,8 +339,8 @@ class _DialogScreenState extends State<DialogScreen> {
                         color: AppColors.primary,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.send,
-                          color: Colors.white, size: 18),
+                      child:
+                          const Icon(Icons.send, color: Colors.white, size: 18),
                     ),
                   ),
                 ],
@@ -444,14 +352,52 @@ class _DialogScreenState extends State<DialogScreen> {
     );
   }
 
-  String _initialsFor(String name) {
-    if (name.isEmpty) return 'U';
-    final parts = name.trim().split(' ');
-    final buf = StringBuffer();
-    for (var i = 0; i < parts.length && i < 2; i++) {
-      if (parts[i].isNotEmpty) buf.write(parts[i][0]);
+  Widget _buildMessages(AppPalette palette) {
+    if (!loaded) return const Center(child: CircularProgressIndicator());
+    if (messages.isEmpty && !contactTyping) {
+      return Center(
+        child: Text('Напишите первое сообщение',
+            style: TextStyle(color: palette.textSecondary, fontSize: 15)),
+      );
     }
-    final s = buf.toString().toUpperCase();
-    return s.isEmpty ? 'U' : s;
+    // Нажатие на пустое место списка убирает клавиатуру.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: ListView.builder(
+        controller: _scroll,
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        itemCount: messages.length + (contactTyping ? 1 : 0),
+        itemBuilder: (_, i) {
+          if (contactTyping && i == messages.length) {
+            return Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                decoration: BoxDecoration(
+                  color: palette.bubbleIn,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Text('...',
+                    style:
+                        TextStyle(color: palette.textSecondary, fontSize: 15)),
+              ),
+            );
+          }
+          final m = messages[i];
+          final hasImage = m.imagePath != null && m.imagePath!.isNotEmpty;
+          return MessageBubble(
+            text: m.text,
+            time: m.time,
+            outgoing: m.outgoing,
+            imagePath: m.imagePath,
+            onImageTap: hasImage ? () => _openPhoto(m) : null,
+          );
+        },
+      ),
+    );
   }
 }
